@@ -68,7 +68,9 @@ class BenchmarkRunner:
                                 expected_pp = pp
                                 expected_ctx = depth
 
-                                for run in range(self.config.num_runs):
+                                for run in range(self.config.num_runs + 1):
+                                    is_warmup = run == 0
+                                    run_label = "Warmup" if is_warmup else f"Run {run}/{self.config.num_runs}"
 
                                     # Adapt prompt tokens
                                     current_pp = pp
@@ -91,7 +93,7 @@ class BenchmarkRunner:
 
                                     if self.config.enable_prefix_caching and depth > 0:
                                         # Phase 1: Context Load
-                                        print(f"  Run {run+1}/{self.config.num_runs} (Context Load, batch size {concurrency})...")
+                                        print(f"  {run_label} (Context Load, batch size {concurrency})...")
                                         load_tasks = []
                                         for i in range(concurrency):
                                             context, _ = prompt_batch[i]
@@ -105,7 +107,8 @@ class BenchmarkRunner:
                                             ))
 
                                         load_results = await asyncio.gather(*load_tasks)
-                                        run_ctx_results.append(load_results)
+                                        if not is_warmup:
+                                            run_ctx_results.append(load_results)
 
                                         if self.config.exit_on_first_fail and any(r.error for r in load_results):
                                             first_error = next(r.error for r in load_results if r.error)
@@ -113,7 +116,7 @@ class BenchmarkRunner:
                                             raise BenchmarkFailure()
 
                                         # Phase 2: Inference
-                                        print(f"  Run {run+1}/{self.config.num_runs} (Inference, batch size {concurrency})...")
+                                        print(f"  {run_label} (Inference, batch size {concurrency})...")
                                         inf_tasks = []
                                         for i in range(concurrency):
                                             context, prompt = prompt_batch[i]
@@ -127,7 +130,8 @@ class BenchmarkRunner:
                                             ))
 
                                         batch_results = await asyncio.gather(*inf_tasks)
-                                        run_std_results.append(batch_results)
+                                        if not is_warmup:
+                                            run_std_results.append(batch_results)
 
                                         if self.config.exit_on_first_fail and any(r.error for r in batch_results):
                                             first_error = next(r.error for r in batch_results if r.error)
@@ -136,7 +140,7 @@ class BenchmarkRunner:
 
                                     else:
                                         # Standard Run
-                                        print(f"  Run {run+1}/{self.config.num_runs} (batch size {concurrency})...")
+                                        print(f"  {run_label} (batch size {concurrency})...")
                                         expected_tokens = current_pp + current_depth
                                         batch_tasks = []
                                         for i in range(concurrency):
@@ -151,7 +155,8 @@ class BenchmarkRunner:
                                             ))
 
                                         batch_results = await asyncio.gather(*batch_tasks)
-                                        run_std_results.append(batch_results)
+                                        if not is_warmup:
+                                            run_std_results.append(batch_results)
 
                                         if self.config.exit_on_first_fail and any(r.error for r in batch_results):
                                             first_error = next(r.error for r in batch_results if r.error)
